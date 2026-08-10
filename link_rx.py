@@ -13,6 +13,8 @@ def crc16_ccitt(data: bytes) -> int:
 def main(port):
     ser = serial.Serial(port, 115200, timeout=1)
     state, buf, need = 'SYNC1', bytearray(), 0
+    last_seq, last_ts = None, None
+    seq_gaps, lost, duplicates = 0,0,0
     while True:
         byte = ser.read(1)
         if not byte:
@@ -31,6 +33,19 @@ def main(port):
                 if crc16_ccitt(bytes(body)) == rx_crc:
                     seq = body[1]
                     ts, = struct.unpack('<I', bytes(body[2:6]))
+                    if seq == last_seq and ts == last_ts:
+                        duplicates += 1
+                        state = 'SYNC1'
+                        continue
+
+                    if last_seq is not None:
+                        gap = (seq - last_seq) & 0xFF
+                        if gap != 1:
+                            seq_gaps += 1
+                            lost += gap - 1
+                            print(f"  !! SEQ GAP — expected {(last_seq + 1) & 0xFF}, got {seq} ({gap - 1} lost)")
+                    last_seq, last_ts = seq, ts
+
                     ax, ay, az, tmp, gx, gy, gz = struct.unpack('>7h', bytes(body[6:20]))
                     print(f"seq={seq:3d} ts={ts:10d} ax={ax:6d} ay={ay:6d} az={az:6d} "
                         f"gx={gx:6d} gy={gy:6d} gz={gz:6d}")
