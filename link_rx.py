@@ -1,6 +1,36 @@
-import serial, struct, sys
+import serial, struct, sys, time
+from collections import deque
 
 SYNC1, SYNC2 = 0xAA, 0x55
+WINDOW = 50
+DOWN_TIMEOUT = 0.5
+
+class LinkState:
+    def __init__(self):
+        self.state = 'DOWN'
+        self.outcomes = deque(maxlen=WINDOW)
+        self.last_good = None
+
+    def record(self, good, gap=False):
+        self.outcomes.append(good)
+        if good:
+            self.last_good = time.time()
+        self._update(gap)
+
+    def check_timeout(self):
+        self._update(False)
+
+    def _update(self, gap):
+        if self.last_good is None or (time.time() - self.last_good) > DOWN_TIMEOUT:
+            new_state = 'DOWN'
+        else:
+            error_rate = 1 - (sum(self.outcomes) / len(self.outcomes)) if self.outcomes else 0
+            new_state = 'DEGRADED' if (error_rate >= 0.01 or gap) else 'UP'
+        if new_state != self.state:
+            print(f"  ### LINK STATE: {self.state} -> {new_state}")
+            self.state = new_state
+
+
 
 def crc16_ccitt(data: bytes) -> int:
     crc = 0xFFFF
@@ -14,10 +44,12 @@ def main(port):
     ser = serial.Serial(port, 115200, timeout=1)
     state, buf, need = 'SYNC1', bytearray(), 0
     last_seq, last_ts = None, None
+    link = LinkState()
     seq_gaps, lost, duplicates = 0,0,0
     while True:
         byte = ser.read(1)
         if not byte:
+            link.check_timeout()
             continue
         b = byte[0]
 
@@ -44,12 +76,16 @@ def main(port):
                             seq_gaps += 1
                             lost += gap - 1
                             print(f"  !! SEQ GAP — expected {(last_seq + 1) & 0xFF}, got {seq} ({gap - 1} lost)")
+                        link.record(good=True, gap=(gap !=1))
+                    else:    
+                        link.record(good=True)
                     last_seq, last_ts = seq, ts
-
+                    
                     ax, ay, az, tmp, gx, gy, gz = struct.unpack('>7h', bytes(body[6:20]))
                     print(f"seq={seq:3d} ts={ts:10d} ax={ax:6d} ay={ay:6d} az={az:6d} "
                         f"gx={gx:6d} gy={gy:6d} gz={gz:6d}")
                 else:
+                    link.record(good=False)
                     print("!! CRC FAIL — frame discarded")
                 state = 'SYNC1'
 
