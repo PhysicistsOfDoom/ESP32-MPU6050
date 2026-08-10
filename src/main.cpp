@@ -50,6 +50,8 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t len) {
 }
 
 static uint8_t txSeq = 0;
+volatile bool corruptMode = false;
+volatile uint32_t injectedErrors = 0;
 
 void sendFrame(const ImuSample &s) {
     uint8_t f[24];
@@ -71,6 +73,11 @@ void sendFrame(const ImuSample &s) {
     uint16_t crc = crc16_ccitt(&f[2], 20);   // LEN+SEQ+PAYLOAD only
     f[22] = (crc >> 8) & 0xFF;
     f[23] =  crc       & 0xFF;
+
+    if (corruptMode && (txSeq % 10 == 0)) {
+      f[12] ^= 0x01;
+      injectedErrors++;
+    }
           
     Serial.write(f, 24);
 }
@@ -90,7 +97,13 @@ void taskSensor (void *pv) {
 
 void taskLink(void *pv) {
 	ImuSample s;
+  uint32_t lastToggle = millis();
 	for (;;) {
+    if (millis() - lastToggle > 5000) {
+      corruptMode = !corruptMode;
+      lastToggle = millis();
+      digitalWrite(2, corruptMode ? HIGH : LOW);
+    }
 		if (xQueueReceive(sampleQueue, &s, portMAX_DELAY) == pdTRUE) {
 			sendFrame(s);
 		}
