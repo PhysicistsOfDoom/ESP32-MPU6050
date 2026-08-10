@@ -49,12 +49,16 @@ Ctrl+C prints a final stats report.
 
 ## Stats (CRC, Link stats, Jitter):
 
+![Link state transitioning UP to DEGRADED and back](docs/images/2.%20LinkState.png)
+
 Every 5 seconds the firmware flips into "corrupt mode" and flips one bit in
 1-of-10 outgoing frames — after the CRC is already computed, so it's a real
 simulated transmission error. The receiver's job is to catch every one of
 them without ever flagging a clean frame.
 
 Measured result from a live run:
+
+![Successful test run](docs/images/4.%20SuccessfulTests.png)
 
 ```
 --- LINK STATISTICS ---
