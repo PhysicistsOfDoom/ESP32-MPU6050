@@ -2,12 +2,14 @@
 #include <Wire.h>
 
 #define REG_PWR_MGMT_1 0x6B
-#define REG_ACCEL_XOUT_H 0x3B
+#define REG_ACCEL_XOUT_H 0x3B // REAL sensor data contiguously begins!!
 #define MPU_ADDR 0x68
 
 struct ImuSample {
 	int16_t ax, ay, az, temp, gx, gy, gz;
 };
+
+QueueHandle_t sampleQueue;
 
 bool mpuReadAll(ImuSample &s){
     Wire.beginTransmission(MPU_ADDR);
@@ -25,11 +27,34 @@ bool mpuReadAll(ImuSample &s){
     return true;
 }
 
+// WAKE UP the MPU!
 void mpuWriteReg(uint8_t reg, uint8_t val) {
 	Wire.beginTransmission(MPU_ADDR);
 	Wire.write(reg);
 	Wire.write(val);
 	Wire.endTransmission(true);
+}
+
+void taskSensor (void *pv) {
+	const TickType_t period = pdMS_TO_TICKS(10); 
+	TickType_t last = xTaskGetTickCount();
+	ImuSample s;
+	for (;;) {
+		if (mpuReadAll(s)) {
+			xQueueSend(sampleQueue, &s, 0);
+		}
+		vTaskDelayUntil(&last, period);
+	}
+}
+
+void taskPrint(void *pv) {
+	ImuSample s;
+	for (;;) {
+		if (xQueueReceive(sampleQueue, &s, portMAX_DELAY) == pdTRUE) {
+			Serial.printf("ax=%d ay=%d az=%d temp=%d gx=%d gy=%d gz=%d\n",
+				s.ax, s.ay, s.az, s.temp, s.gx, s.gy, s.gz);
+		}
+	}
 }
 
 void setup() {
@@ -38,16 +63,14 @@ void setup() {
 	Wire.begin(21,22);
 	mpuWriteReg(REG_PWR_MGMT_1, 0x00);
 	delay(100);
-}
 
+	sampleQueue = xQueueCreate(32, sizeof(ImuSample));
+	xTaskCreatePinnedToCore(taskSensor, "sensor", 4096, NULL, 5, NULL, 1); // Both of these will be context switching on core 1
+	xTaskCreatePinnedToCore(taskPrint, "print", 4096, NULL, 3, NULL, 1);
+}
 
 // Central loop
 void loop() {
-	ImuSample s;
-	if (mpuReadAll(s)) {
-		Serial.printf("ax=%d ay=%d az=%d temp=%d gx=%d gy=%d gz=%d\n",
-			s.ax, s.ay, s.az, s.temp, s.gx, s.gy, s.gz);	
-	}
-	delay(100);
+	vTaskDelete(NULL);
 }
 
