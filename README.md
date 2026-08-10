@@ -12,6 +12,8 @@ proven against real, injected errors.
 
 ## Hardware
 
+![Full setup](docs/images/Fullview.png)
+
 | MPU6050 pin | ESP32 pin | Note |
 |---|---|---|
 | VCC | 3V3 | Not 5V |
@@ -19,6 +21,8 @@ proven against real, injected errors.
 | SDA | GPIO 21 | |
 | SCL | GPIO 22 | |
 | AD0 | GND | Sets I2C address to 0x68 |
+
+![Wiring closeup](docs/images/Closeup.png)
 
 ## Frame format — 24 bytes
 
