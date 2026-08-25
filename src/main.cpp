@@ -97,13 +97,13 @@ void taskSensor (void *pv) {
 
 void taskLink(void *pv) {
 	ImuSample s;
-  uint32_t lastToggle = millis();
+	uint32_t lastToggle = millis();
 	for (;;) {
-    if (millis() - lastToggle > 5000) {
-      corruptMode = !corruptMode;
-      lastToggle = millis();
-      digitalWrite(2, corruptMode ? HIGH : LOW);
-    }
+	    if (millis() - lastToggle > 5000) {
+	      corruptMode = !corruptMode;
+	      lastToggle = millis();
+	      digitalWrite(2, corruptMode ? HIGH : LOW);
+	    }
 		if (xQueueReceive(sampleQueue, &s, portMAX_DELAY) == pdTRUE) {
 			sendFrame(s);
 		}
