@@ -10,6 +10,10 @@ The firmware also has a built-in test mode that deliberately corrupts frames
 on a timer, so the error-detection logic isn't just assumed to work — it's
 proven against real, injected errors.
 
+Originally built on PlatformIO/Arduino; ported to raw ESP-IDF (v6.1) to work
+directly against the native FreeRTOS/driver APIs rather than the Arduino
+abstraction layer.
+
 ## Hardware
 
 | MPU6050 pin | ESP32 pin | Note |
@@ -33,12 +37,12 @@ Offset  Size  Field    Description
 
 ## Running it
 
-**Firmware:**
+**Firmware (ESP-IDF):**
 ```
-pio run --target upload
+idf.py build flash monitor
 ```
 
-**Host receiver** 
+**Host receiver:**
 
 `pip install -r requirements.txt`:
 
@@ -46,6 +50,12 @@ pio run --target upload
 python3 link_rx.py /dev/ttyUSB0
 ```
 Ctrl+C prints a final stats report.
+
+> `frame_parser.py` is a lighter-weight version of the same parsing logic
+> (sync/LEN/SEQ/CRC validation, no live link-state tracking or final stats
+> report) — useful for a quick raw sanity check of the frame contents.
+> `link_rx.py` is the primary tool for real runs and is what the stats below
+> are pulled from.
 
 ## Stats (CRC, Link stats, Jitter):
 
@@ -93,4 +103,3 @@ the underlying sample timing itself holds a steady 9999-10000us baseline.
 ![Full setup](docs/images/Fullview.png)
 
 ![Wiring closeup](docs/images/Closeup.png)
-

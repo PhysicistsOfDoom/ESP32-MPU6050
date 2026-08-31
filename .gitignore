@@ -1,5 +1,9 @@
-.pio
 .vscode
 .venv
 .env
-.main*
+*.swp
+*.swo
+build/
+sdkconfig
+__pycache__/
+*.pyc
