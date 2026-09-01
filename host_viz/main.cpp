@@ -1,4 +1,5 @@
-??? from here until ???END lines may have been inserted/deleted
+// Vulkan or OpenGL visuals of a cube will be applied with the values from
+// the frames.
 
   #include <fcntl.h>
   #include <termios.h>

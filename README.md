@@ -2,9 +2,9 @@
 
 An ESP32 samples an MPU6050 IMU at 100 Hz on a dedicated FreeRTOS task, packages
 each sample into a fixed-size framed packet (sync word, sequence number,
-payload, CRC-16), and streams it over UART. A Python host script re-syncs on
-the byte stream, validates every frame, detects dropped/duplicate frames,
-tracks live link health (UP / DEGRADED / DOWN), and reports final statistics.
+payload, CRC-16), and streams it over UART. A Python host script (`frame_parser.py`)
+re-syncs on the byte stream, validates every frame's CRC, detects sequence
+gaps, and prints a running frames-OK/dropped count.
 
 The firmware also has a built-in test mode that deliberately corrupts frames
 on a timer, so the error-detection logic isn't just assumed to work — it's
@@ -13,6 +13,45 @@ proven against real, injected errors.
 Originally built on PlatformIO/Arduino; ported to raw ESP-IDF (v6.1) to work
 directly against the native FreeRTOS/driver APIs rather than the Arduino
 abstraction layer.
+
+## Design
+
+`main/` is split into one class per responsibility instead of one file full
+of free functions and globals:
+
+- **`Mpu6050`** (`Mpu6050.h`/`.cpp`) — owns the I2C bus/device handle and the
+  register-level protocol: `wake()` brings up the I2C bus on first call and
+  clears the sensor's sleep bit, and `readAll()` pulls all 7 axes +
+  temperature in one transaction.
+- **`FrameBuilder`** (`FrameBuilder.h`/`.cpp`) — owns everything about the
+  wire format: the rolling sequence number, the CRC-16-CCITT computation, and
+  the periodic error-injection ("corrupt mode") behavior, all behind a single
+  `build()` call.
+- **`SensorNode`** (`SensorNode.h`/`.cpp`) — owns one `Mpu6050`, one
+  `FrameBuilder`, the FreeRTOS queue between them, and the UART/GPIO link.
+  `begin()` sets up UART/GPIO, wakes the sensor, and spawns the sensor and
+  link tasks.
+
+The two FreeRTOS tasks stay plain functions — `xTaskCreatePinnedToCore`
+requires a `void(*)(void*)` pointer, so they can't be instance methods
+directly — but each is just a one-line static trampoline
+(`sensorTaskTrampoline`/`linkTaskTrampoline`) that casts `pv` back to a
+`SensorNode*` and forwards into the real per-instance loop
+(`sensorTaskLoop()`/`linkTaskLoop()`). The queue between them is a raw
+FreeRTOS `QueueHandle_t` living inside `SensorNode` — its built-in locking
+already gives blocking producer/consumer semantics, so there's no separate
+wrapper needed once nothing outside `SensorNode` touches it.
+
+`main/main.cpp` itself is just:
+
+```cpp
+#include "SensorNode.h"
+
+extern "C" void app_main(void) {
+    static SensorNode node;
+    node.begin();
+}
+```
 
 ## Hardware
 
@@ -47,17 +86,26 @@ idf.py build flash monitor
 `pip install -r requirements.txt`:
 
 ```
-python3 link_rx.py /dev/ttyUSB0
+python3 frame_parser.py /dev/ttyUSB0
 ```
-Ctrl+C prints a final stats report.
+Ctrl+C prints a final frames-OK/resync-drop count.
 
-> `frame_parser.py` is a lighter-weight version of the same parsing logic
-> (sync/LEN/SEQ/CRC validation, no live link-state tracking or final stats
-> report) — useful for a quick raw sanity check of the frame contents.
-> `link_rx.py` is the primary tool for real runs and is what the stats below
-> are pulled from.
+> `run.sh` builds, flashes, waits for the board to reboot, then launches
+> `frame_parser.py` on the given port (`--no-build` skips the build/flash
+> step, `--port=` overrides the default `/dev/ttyUSB0`).
+>
+> `hex_monitor.py` is a raw hex dump of whatever bytes show up on the
+> serial port — no framing/CRC logic at all — useful for a quick sanity
+> check that the board is transmitting anything before debugging the
+> framed protocol.
 
 ## Stats (CRC, Link stats, Jitter):
+
+> Captured with an earlier, more instrumented host receiver (`link_rx.py`,
+> since removed) that tracked live link state and duplicate/jitter stats on
+> top of the same CRC/sequence validation `frame_parser.py` still does.
+> `frame_parser.py` only prints a running frames-OK/resync-drop count, but
+> the underlying firmware behavior and measurements below are unchanged.
 
 ![Link state transitioning UP to DEGRADED and back](docs/images/2.%20LinkState.png)
 
